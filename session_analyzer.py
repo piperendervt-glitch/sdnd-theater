@@ -55,6 +55,38 @@ def detect_cooperation(actions: list[dict]) -> list[str]:
     return cooperations
 
 
+# 世界観逸脱パターン
+WORLD_BREAK_PATTERNS = [
+    (r"スマ[ホー]", "modern_tech"),
+    (r"インターネット", "modern_tech"),
+    (r"パソコン", "modern_tech"),
+    (r"SNS", "modern_tech"),
+    (r"電話", "modern_tech"),
+    (r"テレビ", "modern_tech"),
+    (r"銃|ライフル|ピストル", "modern_weapon"),
+]
+
+
+def check_world_consistency(messages: list[dict]) -> list[dict]:
+    """全メッセージから世界観逸脱を検出する。
+
+    Returns:
+        [{"message_index": int, "pattern_type": str, "matched": str}, ...]
+    """
+    issues = []
+    for i, msg in enumerate(messages):
+        content = msg.get("content", "")
+        for pattern, ptype in WORLD_BREAK_PATTERNS:
+            m = re.search(pattern, content)
+            if m:
+                issues.append({
+                    "message_index": i,
+                    "pattern_type": ptype,
+                    "matched": m.group(),
+                })
+    return issues
+
+
 def analyze_session(json_path: str) -> str:
     """JSONログを分析してレポートを生成する"""
     path = Path(json_path)
@@ -155,6 +187,69 @@ def analyze_session(json_path: str) -> str:
     lines.append(f"- 多様性: {diversity_score:.1f}/10（{unique_cats}カテゴリ使用）")
     lines.append(f"- 連携度: {coop_score:.1f}/10（{len(all_cooperations)}回検出）")
     lines.append(f"- **総合: {overall:.1f}/10**")
+    lines.append("")
+
+    # トレーニングデータ品質
+    lines.append("## トレーニングデータ品質")
+    lines.append("")
+
+    world_issues = check_world_consistency(messages)
+
+    # JSONL スコアリング結果があれば読み込む
+    training_data_log = data.get("training_data_log", "")
+    scored_path = Path(json_path).parent / training_data_log.replace(
+        "raw/", "../scored/"
+    ) if training_data_log else None
+    scored_entries = []
+    if scored_path and scored_path.exists():
+        with open(scored_path, encoding="utf-8") as sf:
+            for line in sf:
+                line = line.strip()
+                if line:
+                    try:
+                        scored_entries.append(json.loads(line))
+                    except json.JSONDecodeError:
+                        pass
+
+    if scored_entries:
+        scores = [
+            e["training_data"]["quality_score"]
+            for e in scored_entries
+            if e.get("training_data", {}).get("quality_score") is not None
+        ]
+        good_count = sum(
+            1 for e in scored_entries
+            if e.get("training_data", {}).get("is_good_example")
+        )
+        avg_score = sum(scores) / max(len(scores), 1)
+        if avg_score >= 70:
+            verdict = "FT候補"
+        elif avg_score >= 50:
+            verdict = "要確認"
+        else:
+            verdict = "除外推奨"
+        lines.append(f"- 平均品質スコア: {avg_score:.1f} / 100")
+        lines.append(f"- 良質エントリ数: {good_count} / {len(scored_entries)}")
+    else:
+        lines.append(f"- 平均品質スコア: （未スコアリング — `log_pipeline.py score` を実行）")
+        verdict = None
+
+    if world_issues:
+        lines.append(f"- 世界観逸脱件数: {len(world_issues)}")
+        for issue in world_issues:
+            lines.append(
+                f"  - メッセージ#{issue['message_index']}: "
+                f"{issue['pattern_type']} (「{issue['matched']}」)"
+            )
+    else:
+        lines.append("- 世界観逸脱件数: 0")
+
+    if verdict:
+        mark = "✅" if verdict == "FT候補" else "⚠️"
+        lines.append(f"- 総合判定: {mark} {verdict}")
+    else:
+        recommended = overall >= 5.0 and len(world_issues) == 0
+        lines.append(f"- 総合判定: {'✅ 推奨' if recommended else '⚠️ 非推奨'}（簡易判定）")
 
     return "\n".join(lines)
 

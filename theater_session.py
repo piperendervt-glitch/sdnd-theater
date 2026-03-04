@@ -21,12 +21,13 @@ sys.path.insert(0, str(Path(SDND_TRPG_PATH).resolve()))
 
 from ai_player import AIPlayer  # noqa: E402
 from characters import PLAYABLE_CHARACTERS  # noqa: E402
-from llm_backend import GeminiBackend  # noqa: E402
+from llm_backend import GeminiBackend  # noqa: E402  # --provider gemini 時に使用
 from scenarios import SCENARIOS  # noqa: E402
 from spec_loader import load_specs  # noqa: E402
 from gm import build_system_prompt  # noqa: E402
 
 from observer import Observer  # noqa: E402
+from llm_client import LLMClient, create_backend  # noqa: E402
 
 # ── 定数 ──────────────────────────────────────────
 MAX_HISTORY = 30
@@ -94,7 +95,11 @@ def save_session(
     json_path = session_dir / f"{base_name}.json"
     with open(json_path, "w", encoding="utf-8") as f:
         json.dump(
-            {"metadata": metadata, "messages": messages},
+            {
+                "metadata": metadata,
+                "messages": messages,
+                "training_data_log": f"raw/{metadata.get('session_id', '')}.jsonl",
+            },
             f,
             ensure_ascii=False,
             indent=2,
@@ -118,6 +123,12 @@ def parse_args():
     )
     parser.add_argument("--scenario", type=str, default=None, help="シナリオ名")
     parser.add_argument("--model", type=str, default=None, help="使用モデル名")
+    parser.add_argument(
+        "--provider", type=str, default=None,
+        choices=["gemini", "claude"],
+        help="LLMプロバイダー (default: env LLM_PROVIDER or gemini)",
+    )
+    parser.add_argument("--rag", action="store_true", help="RAG（過去セッション参照）を有効化")
     return parser.parse_args()
 
 
@@ -139,22 +150,44 @@ def main():
     print(BANNER)
 
     # ── 初期化 ──
-    api_key = os.getenv("GEMINI_API_KEY")
-    if not api_key:
-        print("❌ GEMINI_API_KEY が設定されていません。.env を確認してください。")
-        sys.exit(1)
-
     print("⚙  初期化中...")
 
     # specs 読み込み
     specs = load_specs()
 
-    # LLMバックエンド
-    backend = GeminiBackend(api_key)
+    # LLMバックエンド（LLMClient でラップし、全呼び出しを JSONL に記録）
+    try:
+        raw_backend, provider_name = create_backend(args.provider)
+    except RuntimeError as e:
+        print(f"❌ {e}")
+        sys.exit(1)
+    # RAG 初期化（--rag 指定時）
+    rag_indexer = None
+    use_rag = getattr(args, "rag", False)
+    if use_rag:
+        try:
+            from rag_indexer import RAGIndexer
+            rag_indexer = RAGIndexer()
+            rag_count = rag_indexer.stats()["total_entries"]
+            if rag_count == 0:
+                print("   ⚠ RAG インデックスが空です。RAG なしで続行します。")
+                use_rag = False
+            else:
+                print(f"   RAG: 有効（{rag_count}件のインデックス）")
+        except ImportError:
+            print("   ⚠ RAG 依存パッケージが未インストールです。RAG なしで続行します。")
+            use_rag = False
+
+    backend = LLMClient(
+        raw_backend, log_dir="sessions/raw", provider=provider_name,
+        use_rag=use_rag, rag_indexer=rag_indexer,
+    )
     if args.model:
         backend.MODEL = args.model
+        print(f"   プロバイダー: {provider_name}")
         print(f"   モデル: {args.model}")
     else:
+        print(f"   プロバイダー: {provider_name}")
         print(f"   モデル: {backend.MODEL}")
 
     # Observer
@@ -197,6 +230,7 @@ def main():
     # ── メッセージ履歴 ──
     messages: list[dict] = []
     metadata = {
+        "session_id": backend.session_id,
         "scenario": scenario_name,
         "player_count": len(ai_players),
         "turns": args.turns,
@@ -210,6 +244,7 @@ def main():
     print("-" * 40)
     messages.append({"role": "user", "content": GAME_START_PROMPT})
 
+    backend.set_context(turn=0, role="GM", scene_type="narration")
     try:
         opening = backend.chat(system_prompt, messages, max_output_tokens=1024)
     except Exception as e:
@@ -229,6 +264,7 @@ def main():
 
         for player in ai_players:
             # AI行動決定
+            backend.set_context(turn=turn, role="player", character=player.char_name, scene_type="dialogue")
             try:
                 action = player.decide_action(messages)
             except Exception as e:
@@ -251,6 +287,7 @@ def main():
             print(f"🤖 【{player.char_name}】{action}")
 
             # GM応答
+            backend.set_context(turn=turn, role="GM", character=None, scene_type="narration")
             try:
                 gm_response = backend.chat(system_prompt, messages[-MAX_HISTORY:])
             except Exception as e:

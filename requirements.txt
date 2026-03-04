@@ -1,2 +1,5 @@
+anthropic
+chromadb
 google-genai
 python-dotenv
+sentence-transformers

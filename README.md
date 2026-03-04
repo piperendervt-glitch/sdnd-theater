@@ -61,6 +61,10 @@ python session_analyzer.py sessions/<ログファイル>.json
 | Gemini Flash（有料） | ¥5〜15 | ¥50〜150 |
 | Claude Haiku | ¥15〜45 | ¥150〜450 |
 
+## 用語辞書
+
+プロジェクト内の用語定義は [ubiquitous_language.md](./ubiquitous_language.md) を参照してください。
+
 ## 依存プロジェクト
 
 - [sdnd-trpg](../sdnd-trpg) — ゲームエンジン（同階層に配置）

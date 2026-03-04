@@ -1,6 +1,6 @@
 .env
-sessions/*.md
-sessions/*.json
+sessions/
+.claude/
 __pycache__/
 *.pyc
 .venv/
