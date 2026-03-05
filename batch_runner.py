@@ -69,7 +69,7 @@ def _score_session(jsonl_name: str) -> dict | None:
         summary = score_session(f"sessions/raw/{jsonl_name}")
         return summary
     except Exception as e:
-        print(f"    ⚠ スコアリングエラー: {e}")
+        print(f"    [WARN] スコアリングエラー: {e}")
         return None
 
 
@@ -149,12 +149,12 @@ def run_batch(
                 is_api_error = any(code in error_msg for code in ("503", "429", "APIエラー"))
 
                 if is_api_error and attempt < MAX_RETRIES:
-                    print(f"  ❌ APIエラー発生 → {RETRY_WAIT}秒待機後リトライ "
+                    print(f"  [FAIL] APIエラー発生 -> {RETRY_WAIT}秒待機後リトライ "
                           f"({attempt + 1}/{MAX_RETRIES})")
                     time.sleep(RETRY_WAIT)
                     continue
 
-                print(f"  ❌ 失敗: {error_msg}")
+                print(f"  [FAIL] 失敗: {error_msg}")
                 _log_error(i, error_msg)
                 break
 
@@ -163,7 +163,7 @@ def run_batch(
                 new_files = after - before
                 new_file = new_files.pop() if new_files else "不明"
 
-                print(f"  ✅ 完了 ({elapsed:.1f}秒) → {new_file}")
+                print(f"  [OK] 完了 ({elapsed:.1f}秒) -> {new_file}")
 
                 session_result = {"session": i, "file": new_file, "elapsed": round(elapsed, 1)}
 
@@ -174,7 +174,7 @@ def run_batch(
                         rec = summary["recommendation"]
                         good = summary["good_examples"]
                         n = summary["total_entries"]
-                        print(f"  📊 スコアリング完了 → avg:{avg} / {rec}")
+                        print(f"  [SCORE] スコアリング完了 -> avg:{avg} / {rec}")
                         total_entries += n
                         total_good += good
                         session_result["avg_score"] = avg
@@ -195,7 +195,7 @@ def run_batch(
 
     except KeyboardInterrupt:
         print()
-        print("  ⚠ Ctrl+C で中断されました")
+        print("  [WARN] Ctrl+C で中断されました")
 
     # ── サマリー ──
     print()
@@ -223,7 +223,7 @@ def parse_args():
     parser.add_argument("--players", type=int, default=2, choices=[1, 2, 3],
                         help="プレイヤー数 (default: 2)")
     parser.add_argument("--provider", type=str, default=None,
-                        choices=["gemini", "claude"], help="LLMプロバイダー")
+                        choices=["gemini", "claude", "ollama"], help="LLMプロバイダー")
     parser.add_argument("--interval", type=int, default=3,
                         help="セッション間の待機秒数 (default: 3)")
     parser.add_argument("--no-score", action="store_true",

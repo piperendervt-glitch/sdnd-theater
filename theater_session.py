@@ -125,7 +125,7 @@ def parse_args():
     parser.add_argument("--model", type=str, default=None, help="使用モデル名")
     parser.add_argument(
         "--provider", type=str, default=None,
-        choices=["gemini", "claude"],
+        choices=["gemini", "claude", "ollama"],
         help="LLMプロバイダー (default: env LLM_PROVIDER or gemini)",
     )
     parser.add_argument("--rag", action="store_true", help="RAG（過去セッション参照）を有効化")
@@ -156,11 +156,16 @@ def main():
     specs = load_specs()
 
     # LLMバックエンド（LLMClient でラップし、全呼び出しを JSONL に記録）
-    try:
-        raw_backend, provider_name = create_backend(args.provider)
-    except RuntimeError as e:
-        print(f"❌ {e}")
-        sys.exit(1)
+    if args.provider == "ollama":
+        from ollama_client import OllamaBackend
+        raw_backend = OllamaBackend()
+        provider_name = "ollama"
+    else:
+        try:
+            raw_backend, provider_name = create_backend(args.provider)
+        except RuntimeError as e:
+            print(f"❌ {e}")
+            sys.exit(1)
     # RAG 初期化（--rag 指定時）
     rag_indexer = None
     use_rag = getattr(args, "rag", False)
