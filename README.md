@@ -99,12 +99,31 @@ python rag_indexer.py stats                    # インデックス統計
 python theater_session.py --rag                # RAG有効でセッション実行
 ```
 
+### Ollama ローカルLLM (`ollama_client.py`)
+
+ローカルで動作する Ollama (qwen2.5:3b) をバックエンドとして使用可能。API費用ゼロで大量のセッションを生成できる。
+
+```bash
+# Ollama サーバー起動後
+python theater_session.py --provider ollama
+python batch_runner.py --provider ollama --count 1000 --turns 1 --players 1
+```
+
 ### バッチ実行 (`batch_runner.py`)
 
 セッションを連続実行してログを大量に蓄積する。リトライ・進捗管理付き。
 
 ```bash
 python batch_runner.py --count 10 --turns 3 --players 2
+```
+
+### X自動投稿ボット (`post_to_x_bot.py`, `x_bot/`)
+
+スコア上位セッションをローカルLLMで要約し、X (Twitter) に自動投稿する。スパム対策として投稿間隔のランダム化・1日16件制限を内蔵。
+
+```bash
+python post_to_x_bot.py --dry-run --top-n 5   # ドライラン
+python post_to_x_bot.py --mode batch --top-n 5  # 本番投稿
 ```
 
 ### セッション分析 (`session_analyzer.py`)
@@ -119,7 +138,7 @@ JSONログからロールプレイ品質（没入度・多様性・連携度）�
 | `--players` | 2 | AIプレイヤー人数（1〜3） |
 | `--scenario` | ランダム | シナリオ名 |
 | `--model` | (プロバイダー依存) | 使用モデル名 |
-| `--provider` | gemini | LLMプロバイダー（`gemini` / `claude`） |
+| `--provider` | gemini | LLMプロバイダー（`gemini` / `claude` / `ollama`） |
 | `--rag` | off | RAG（過去セッション参照）を有効化 |
 
 ## 用語辞書
